@@ -66,16 +66,28 @@ app.post('/api/tts', async (req, res) => {
     if (!text) return res.status(400).json({ error: '请提供文本内容' });
 
     text = cleanTextForTTS(text);
+    console.log('TTS请求:', { text: text.substring(0, 50), voice, rate });
+
     const tts = new MsEdgeTTS();
     await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+
+    // 使用 toFile 方式，收集完整音频后返回
     const { audioStream } = tts.toStream(text, { rate, pitch });
 
-    res.set({ 'Content-Type': 'audio/mpeg', 'Transfer-Encoding': 'chunked' });
-    audioStream.pipe(res);
+    const chunks = [];
+    audioStream.on('data', (chunk) => chunks.push(chunk));
+    audioStream.on('end', () => {
+      const audioBuffer = Buffer.concat(chunks);
+      console.log('音频生成完成, 大小:', audioBuffer.length);
+      res.set({ 'Content-Type': 'audio/mpeg', 'Content-Length': audioBuffer.length });
+      res.send(audioBuffer);
+    });
     audioStream.on('error', (err) => {
+      console.error('TTS流错误:', err);
       if (!res.headersSent) res.status(500).json({ error: err.message });
     });
   } catch (error) {
+    console.error('TTS错误:', error);
     res.status(500).json({ error: error.message });
   }
 });
